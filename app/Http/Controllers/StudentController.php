@@ -29,9 +29,21 @@ class StudentController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(Student $student)
+    public function show($id)
     {
-        //
+        $student = Student::find($id);
+
+        if (!$student) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Student not found',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $student,
+        ], 200);
     }
 
     /**
