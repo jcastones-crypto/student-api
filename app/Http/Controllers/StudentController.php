@@ -112,8 +112,22 @@ class StudentController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Student $student)
+    public function destroy($id)
     {
-        //
+        $student = Student::find($id);
+
+        if (!$student) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Student not found',
+            ], 404);
+        }
+
+        $student->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Student deleted successfully',
+        ], 200);
     }
 }
