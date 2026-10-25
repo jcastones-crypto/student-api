@@ -72,9 +72,41 @@ class StudentController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Student $student)
+    public function update(Request $request, $id)
     {
-        //
+        $student = Student::find($id);
+
+        if (!$student) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Student not found',
+            ], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'student_number' => 'required|string|unique:students,student_number,' . $id,
+            'first_name'     => 'required|string|max:100',                      
+            'last_name'      => 'required|string|max:100',
+            'email'          => 'required|email|unique:students,email,' . $id,
+            'course'         => 'required|string|max:100',
+            'year_level'     => 'required|integer|between:1,6',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $student->update($validator->validated());
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Student updated successfully',
+            'data'    => $student,
+        ], 200);
     }
 
     /**
