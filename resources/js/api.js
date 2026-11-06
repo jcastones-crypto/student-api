@@ -6,13 +6,13 @@ const api = axios.create({
     headers: { Accept: 'application/json' },
 });
 
-// Attach the saved Sanctum token to every request
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
+// Called by useAuth: attach (or remove) the Bearer token on EVERY request
+export function setAuthToken(token) {
     if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+        api.defaults.headers.common.Authorization = `Bearer ${token}`;
+    } else {
+        delete api.defaults.headers.common.Authorization;
     }
-    return config;
-});
+}
 
 export default api;
