@@ -1,31 +1,28 @@
 <script setup>
 import { ref } from 'vue';
-import api from '../api';
+import { useAuth } from '../composables/useAuth';
 
-const emit = defineEmits(['login']);
+const emit = defineEmits(['success']);
 
+// State from the shared auth composable
+const { login, loggingIn, loginError } = useAuth();
+
+// Controlled inputs: the refs below ALWAYS hold what is typed
 const email = ref('');
 const password = ref('');
-const error = ref('');
-const loading = ref(false);
+const showPassword = ref(false);
+const localError = ref('');
 
 async function submit() {
-    error.value = '';
-    loading.value = true;
-    try {
-        const { data } = await api.post('/login', {
-            email: email.value,
-            password: password.value,
-        });
-        emit('login', { token: data.access_token, user: data.user });
-    } catch (e) {
-        if (e.response?.status === 422) {
-            error.value = 'Please enter a valid email and password.';
-        } else {
-            error.value = e.response?.data?.message || 'Login failed.';
-        }
-    } finally {
-        loading.value = false;
+    localError.value = '';
+    if (!email.value.trim() || !password.value) {
+        localError.value = 'Please enter your email and password.';
+        return;
+    }
+    const ok = await login(email.value.trim(), password.value);
+    if (ok) {
+        password.value = ''; // do not keep the password in memory
+        emit('success');
     }
 }
 </script>
@@ -33,14 +30,39 @@ async function submit() {
 <template>
     <div class="card login">
         <h2>Login</h2>
-        <p v-if="error" class="alert error">{{ error }}</p>
+
+        <p v-if="localError || loginError" class="alert error">
+            {{ localError || loginError }}
+        </p>
+
         <form @submit.prevent="submit">
             <label>Email</label>
-            <input v-model="email" type="email" placeholder="admin@example.com" />
+            <input
+                v-model="email"
+                type="email"
+                placeholder="Email"
+                autocomplete="username"
+                :disabled="loggingIn"
+                @input="localError = ''"
+            />
+
             <label>Password</label>
-            <input v-model="password" type="password" placeholder="password" />
-            <button class="btn primary" :disabled="loading">
-                {{ loading ? 'Logging in...' : 'Login' }}
+            <input
+                v-model="password"
+                :type="showPassword ? 'text' : 'password'"
+                placeholder="Password"
+                autocomplete="current-password"
+                :disabled="loggingIn"
+                @input="localError = ''"
+            />
+
+            <label class="check-row">
+                <input v-model="showPassword" type="checkbox" />
+                Show password
+            </label>
+
+            <button class="btn primary" :disabled="loggingIn">
+                {{ loggingIn ? 'Logging in...' : 'Login' }}
             </button>
         </form>
     </div>
