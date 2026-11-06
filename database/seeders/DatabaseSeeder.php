@@ -9,11 +9,22 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // Passwords come from your local .env file (never committed to GitHub)
+        $adminPassword = env('SEED_ADMIN_PASSWORD');
+        $userPassword = env('SEED_USER_PASSWORD');
+
+        if (!$adminPassword || !$userPassword) {
+            $this->command?->error(
+                'Set SEED_ADMIN_PASSWORD and SEED_USER_PASSWORD in your .env file first.'
+            );
+            return;
+        }
+
         User::updateOrCreate(
             ['email' => 'admin@example.com'],
             [
                 'name' => 'Administrator',
-                'password' => 'password123',
+                'password' => $adminPassword,
                 'role' => 'admin',
             ]
         );
@@ -22,7 +33,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'user@example.com'],
             [
                 'name' => 'Regular User',
-                'password' => 'password123',
+                'password' => $userPassword,
                 'role' => 'user',
             ]
         );
