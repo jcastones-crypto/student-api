@@ -1,136 +1,60 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
-import api from './api';
+import { onMounted } from 'vue';
+import { useAuth } from './composables/useAuth';
+import { useStudents } from './composables/useStudents';
+import { useAlert } from './composables/useAlert';
 import LoginForm from './components/LoginForm.vue';
 import StudentForm from './components/StudentForm.vue';
 import StudentList from './components/StudentList.vue';
 import AlertMessage from './components/AlertMessage.vue';
 
-const user = ref(JSON.parse(localStorage.getItem('user') || 'null'));
-const students = ref([]);
-const selected = ref(null); // student being edited (null = adding)
-const showForm = ref(false);
-const loading = ref(false);
-const saving = ref(false);
-const errors = ref({});
-const alert = ref({ type: 'success', message: '' });
+// ===== Shared state from the composables (Composition API) =====
+const { user, isLoggedIn, isAdmin, tokenPreview, logout, restoreSession } = useAuth();
+const { alert, success, error, clear } = useAlert();
+const {
+    students,
+    filteredStudents,
+    search,
+    loading,
+    saving,
+    deletingId,
+    serverErrors,
+    editing,
+    formOpen,
+    fetchStudents,
+    openAdd,
+    openEdit,
+    closeForm,
+    clearFieldError,
+    saveStudent,
+    removeStudent,
+    resetStudents,
+} = useStudents();
 
-const isLoggedIn = computed(() => user.value !== null);
-const isAdmin = computed(() => user.value?.role === 'admin');
-
-function notify(type, message) {
-    alert.value = { type, message };
+// ===== Event handlers =====
+async function onLoggedIn() {
+    success(`Welcome, ${user.value.name}!`);
+    await fetchStudents();
 }
 
-function clearSession() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    user.value = null;
-    students.value = [];
-    showForm.value = false;
+async function onLogout() {
+    await logout();
+    resetStudents();
+    success('Logged out successfully. Token revoked.');
 }
 
-function handleError(e) {
-    const status = e.response?.status;
-    if (status === 422) {
-        errors.value = e.response.data.errors || {};
-        notify('error', e.response.data.message || 'Validation failed.');
-    } else if (status === 401) {
-        clearSession();
-        notify('error', 'Session expired. Please log in again.');
-    } else if (status === 403) {
-        notify('error', e.response.data.message || 'You do not have permission.');
-    } else if (status === 404) {
-        notify('error', 'Student not found.');
-    } else {
-        notify('error', e.response?.data?.message || 'Something went wrong.');
+function onRemove(student) {
+    if (confirm(`Delete ${student.first_name} ${student.last_name}?`)) {
+        removeStudent(student);
     }
 }
 
-// READ (retrieve)
-async function fetchStudents() {
-    loading.value = true;
-    try {
-        const { data } = await api.get('/students');
-        students.value = data.data;
-    } catch (e) {
-        handleError(e);
-    } finally {
-        loading.value = false;
-    }
-}
-
-function onLogin({ token, user: u }) {
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(u));
-    user.value = u;
-    notify('success', `Welcome, ${u.name}!`);
-    fetchStudents();
-}
-
-async function logout() {
-    try {
-        await api.post('/logout');
-    } catch (e) {
-        // ignore, the session is cleared anyway
-    }
-    clearSession();
-    notify('success', 'Logged out successfully.');
-}
-
-function openAdd() {
-    selected.value = null;
-    errors.value = {};
-    showForm.value = true;
-}
-
-function openEdit(student) {
-    selected.value = student;
-    errors.value = {};
-    showForm.value = true;
-}
-
-function cancelForm() {
-    showForm.value = false;
-    selected.value = null;
-    errors.value = {};
-}
-
-// CREATE (add) and UPDATE
-async function saveStudent(form) {
-    saving.value = true;
-    errors.value = {};
-    try {
-        if (selected.value) {
-            await api.put(`/students/${selected.value.id}`, form);
-            notify('success', 'Student updated successfully.');
-        } else {
-            await api.post('/students', form);
-            notify('success', 'Student added successfully.');
-        }
-        cancelForm();
-        await fetchStudents();
-    } catch (e) {
-        handleError(e);
-    } finally {
-        saving.value = false;
-    }
-}
-
-// DELETE
-async function removeStudent(student) {
-    if (!confirm(`Delete ${student.first_name} ${student.last_name}?`)) return;
-    try {
-        await api.delete(`/students/${student.id}`);
-        notify('success', 'Student deleted successfully.');
-        await fetchStudents();
-    } catch (e) {
-        handleError(e);
-    }
-}
-
-onMounted(() => {
-    if (isLoggedIn.value) fetchStudents();
+// On page load: if a token was saved, ask Laravel if it is still valid
+onMounted(async () => {
+    if (!isLoggedIn.value) return;
+    const ok = await restoreSession();
+    if (ok) await fetchStudents();
+    else if (!isLoggedIn.value) error('Your session has expired. Please log in again.');
 });
 </script>
 
@@ -138,40 +62,56 @@ onMounted(() => {
     <div class="page">
         <header>
             <h1>Student Management</h1>
+
             <div v-if="isLoggedIn" class="user-box">
-                <span>{{ user.name }} ({{ user.role }})</span>
-                <button class="btn small" @click="logout">Logout</button>
+                <div class="who">
+                    <span>{{ user.name }}</span>
+                    <span :class="['badge', isAdmin ? 'admin' : 'user']">
+                        {{ isAdmin ? 'Administrator' : 'Regular User' }}
+                    </span>
+                    <small class="token">Bearer token: {{ tokenPreview }}</small>
+                </div>
+                <button class="btn small" @click="onLogout">Logout</button>
             </div>
         </header>
 
-        <AlertMessage
-            :type="alert.type"
-            :message="alert.message"
-            @close="alert.message = ''"
-        />
+        <AlertMessage :type="alert.type" :message="alert.message" @close="clear" />
 
-        <LoginForm v-if="!isLoggedIn" @login="onLogin" />
+        <LoginForm v-if="!isLoggedIn" @success="onLoggedIn" />
 
         <template v-else>
-            <div v-if="isAdmin && !showForm" class="toolbar">
+            <!-- What this role is allowed to do (Laravel enforces it on the server) -->
+            <p v-if="isAdmin" class="access ok">
+                Full access: you can view, add, update, and delete students.
+            </p>
+            <p v-else class="access limited">
+                Read-only access: you can view students. Only an administrator can add,
+                update, or delete.
+            </p>
+
+            <div v-if="isAdmin && !formOpen" class="toolbar">
                 <button class="btn primary" @click="openAdd">+ Add Student</button>
             </div>
 
             <StudentForm
-                v-if="showForm"
-                :student="selected"
-                :errors="errors"
+                v-if="isAdmin && formOpen"
+                :student="editing"
+                :server-errors="serverErrors"
                 :saving="saving"
                 @save="saveStudent"
-                @cancel="cancelForm"
+                @cancel="closeForm"
+                @clear-error="clearFieldError"
             />
 
             <StudentList
-                :students="students"
+                v-model:search="search"
+                :students="filteredStudents"
+                :total="students.length"
                 :is-admin="isAdmin"
                 :loading="loading"
+                :deleting-id="deletingId"
                 @edit="openEdit"
-                @remove="removeStudent"
+                @remove="onRemove"
             />
         </template>
     </div>
